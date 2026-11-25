@@ -5,7 +5,10 @@ The numerical work is done by the Slicer-independent modules core.py and
 pipeline.py; this class converts MRML nodes to arrays / SimpleITK images and back.
 """
 import colorsys
+import importlib
 import logging
+import os
+import subprocess
 
 import numpy as np
 import SimpleITK as sitk
@@ -27,6 +30,7 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
         self.zubalTable = zt.default_zubal_table()
         self.zubalTableSource = zt.DEFAULT_ZUBAL_CSV
         self.lastResult = None
+        self.tsRequirementsOk = False
 
     # ------------------------------------------------------------------ tables
     def loadMapping(self, path):
@@ -111,17 +115,54 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
                                     "(use View > Extensions Manager).")
         return True
 
-    def runTotalSegmentator(self, ctNode, segNode, task="total", fast=False, cpu=False,
-                            subset=None):
-        """Run TotalSegmentator through the logic of the installed extension."""
-        if not self.isTotalSegmentatorAvailable():
+    @staticmethod
+    def _newTotalSegmentatorLogic():
+        if not SimindPhantomLogic.isTotalSegmentatorAvailable():
             raise core.PhantomError("The TotalSegmentator extension is not installed.")
         from TotalSegmentator import TotalSegmentatorLogic
         tsLogic = TotalSegmentatorLogic()
         if hasattr(tsLogic, "useStandardSegmentNames"):
             tsLogic.useStandardSegmentNames = True
         tsLogic.logCallback = lambda msg: logging.info(f"[TotalSegmentator] {msg}")
-        tsLogic.setupPythonRequirements()
+        return tsLogic
+
+    @staticmethod
+    def _isImportable(module):
+        try:
+            importlib.import_module(module)
+            return True
+        except ImportError:
+            return False
+
+    def ensureTotalSegmentatorRequirements(self, force=False):
+        """Install the Python packages TotalSegmentator needs (once per session).
+
+        pip is told to prefer pre-built wheels (PIP_PREFER_BINARY=1): otherwise it may pick
+        the newest *source* release of a dependency (e.g. python-gdcm 3.2.6 for Python 3.9 on
+        Windows) and fail trying to compile it with CMake."""
+        if self.tsRequirementsOk and not force:
+            return
+        tsLogic = self._newTotalSegmentatorLogic()
+        previous = os.environ.get("PIP_PREFER_BINARY")
+        os.environ["PIP_PREFER_BINARY"] = "1"
+        try:
+            if not self._isImportable("dicom2nifti") and not self._isImportable("gdcm"):
+                slicer.util.pip_install("--only-binary=python-gdcm python-gdcm")
+            tsLogic.setupPythonRequirements()
+        except subprocess.CalledProcessError as e:
+            raise core.PhantomError(core.format_pip_error(e.cmd, e.output, e.stderr)) from e
+        finally:
+            if previous is None:
+                os.environ.pop("PIP_PREFER_BINARY", None)
+            else:
+                os.environ["PIP_PREFER_BINARY"] = previous
+        self.tsRequirementsOk = True
+
+    def runTotalSegmentator(self, ctNode, segNode, task="total", fast=False, cpu=False,
+                            subset=None):
+        """Run TotalSegmentator through the logic of the installed extension."""
+        self.ensureTotalSegmentatorRequirements()
+        tsLogic = self._newTotalSegmentatorLogic()
         kwargs = dict(fast=fast, cpu=cpu, task=task, subset=subset)
         try:
             tsLogic.process(ctNode, segNode, **kwargs)
@@ -129,6 +170,10 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
             kwargs.pop("cpu")
             kwargs.pop("subset")
             tsLogic.process(ctNode, segNode, **kwargs)
+        except subprocess.CalledProcessError as e:
+            raise core.PhantomError(
+                f"TotalSegmentator ({task}) failed; see View > Error Log for details.\n"
+                f"Command: {e.cmd if isinstance(e.cmd, str) else ' '.join(map(str, e.cmd))}") from e
 
     def runTotalSegmentatorInto(self, ctNode, segNode, task, fast=False, cpu=False,
                                 keep=None, rename=None):

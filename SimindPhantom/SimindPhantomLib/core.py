@@ -498,3 +498,42 @@ def seeded_region(hu, seed_zyx, tolerance=50.0, roi=None, radius_vox=3):
     seg = sitk.ConnectedThreshold(sitk.GetImageFromArray(work), seedList=[(x, y, z)],
                                   lower=mean - tolerance, upper=mean + tolerance)
     return sitk.GetArrayFromImage(seg) > 0
+
+
+# --------------------------------------------------------------------------
+# Messages
+# --------------------------------------------------------------------------
+PIP_HELP = """What to try:
+ 1. In the Slicer Python console, install GDCM from a pre-built wheel and then dicom2nifti:
+      slicer.util.pip_install("--only-binary=python-gdcm python-gdcm")
+      slicer.util.pip_install("dicom2nifti<=2.5.1")
+ 2. Check internet access / proxy (HTTPS_PROXY) and that the antivirus allows PythonSlicer.exe.
+ 3. In the TotalSegmentator module: Advanced > "Force reinstall".
+Then click "Install / check TotalSegmentator Python packages" again."""
+
+
+def _as_text(v):
+    if v is None:
+        return ""
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    return str(v)
+
+
+def format_pip_error(cmd, output=None, stderr=None, max_lines=30):
+    """User message for a failed pip command (subprocess.CalledProcessError fields)."""
+    if isinstance(cmd, (list, tuple)):
+        cmd = " ".join(str(c) for c in cmd)
+    text = "\n".join(t for t in (_as_text(output).strip(), _as_text(stderr).strip()) if t)
+    lines = text.splitlines()
+    msg = [f"Installing the TotalSegmentator Python packages failed.\nCommand: {cmd}"]
+    if lines:
+        tail = lines[-max_lines:]
+        msg.append(f"Last {len(tail)} line(s) of pip output:\n" + "\n".join(tail))
+    else:
+        msg.append("pip printed no output here; see View > Error Log for the full pip messages.")
+    joined = text.lower()
+    if "python-gdcm" in joined or "python_gdcm" in joined:
+        msg.append("Cause: pip tried to compile python-gdcm from source (no wheel for this Python).")
+    msg.append(PIP_HELP)
+    return "\n\n".join(msg)

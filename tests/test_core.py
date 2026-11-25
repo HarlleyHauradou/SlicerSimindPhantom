@@ -280,3 +280,13 @@ def test_orientation_independent():
     res = pipeline.build_phantom(flipped, lambda k: fm[k], default_rows(fm),
                                  pipeline.PhantomOptions(**opts))
     assert np.array_equal(ref.zubal, res.zubal)
+
+
+def test_format_pip_error():
+    out = "\n".join(f"line {i}" for i in range(50)) + "\nUsing cached python_gdcm-3.2.6.tar.gz"
+    msg = core.format_pip_error(["PythonSlicer.exe", "-m", "pip", "install", "dicom2nifti<=2.5.1"],
+                                out.encode(), None, max_lines=5)
+    assert "PythonSlicer.exe -m pip install dicom2nifti<=2.5.1" in msg
+    assert "line 46" in msg and "line 45" not in msg
+    assert "compile python-gdcm" in msg and "--only-binary=python-gdcm" in msg
+    assert "Error Log" in core.format_pip_error("pip install x")

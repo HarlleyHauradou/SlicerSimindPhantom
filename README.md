@@ -89,6 +89,25 @@ New lesions are named `lesion_<n> (<source>)`. They therefore get Zubal index 63
 - `generic_120kVp_curve.csv`: simplified Schneider curve, the same one used by `ct2dmi.py`. Use
   the curve measured on your own scanner when possible.
 
+## Troubleshooting
+
+### `pip install dicom2nifti` fails (python-gdcm / CMake error)
+
+On Slicer 5.8 for Windows (Python 3.9), pip can pick the newest **source** release of
+`python-gdcm`. That release has no pre-built wheel for this Python, so pip tries to compile it
+and fails with `CMake Error: ... does not appear to contain CMakeLists.txt`.
+
+The **Install / check TotalSegmentator Python packages** button tells pip to prefer pre-built
+wheels, which avoids this. To fix it by hand, run in the Slicer Python console:
+
+```python
+slicer.util.pip_install("--only-binary=python-gdcm python-gdcm")
+slicer.util.pip_install("dicom2nifti<=2.5.1")
+```
+
+Then click the button again. If something still fails, the status box shows the end of the pip
+output, and the full messages are in *View → Error Log*.
+
 ## Development
 
 ```

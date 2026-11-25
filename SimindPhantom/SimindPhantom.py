@@ -90,6 +90,7 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.segmentationSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSegmentationChanged)
         self.ui.runTotalSegmentatorButton.connect("clicked()", self.onRunTotalSegmentator)
         self.ui.installTotalSegmentatorButton.connect("clicked()", self.onInstallTotalSegmentator)
+        self.ui.tsRequirementsButton.connect("clicked()", self.onTotalSegmentatorRequirements)
         self.ui.openSegmentEditorButton.connect("clicked()", self.onOpenSegmentEditor)
         self.ui.lesionMethodComboBox.connect("currentIndexChanged(int)", self.onLesionMethodChanged)
         self.ui.openMonaiButton.connect("clicked()", self.onOpenMonai)
@@ -150,6 +151,7 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         seg = self.ui.segmentationSelector.currentNode()
         self.ui.installTotalSegmentatorButton.visible = not tsOk
         self.ui.runTotalSegmentatorButton.enabled = tsOk and ct is not None
+        self.ui.tsRequirementsButton.enabled = tsOk
         self.ui.runTotalSegmentatorButton.toolTip = (
             "" if tsOk else "Install the TotalSegmentator extension first.")
         self.ui.openSegmentEditorButton.enabled = seg is not None
@@ -215,11 +217,23 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if slicer.util.confirmOkCancelDisplay("TotalSegmentator was installed. Restart Slicer now?"):
                     slicer.util.restart()
 
+    def onTotalSegmentatorRequirements(self):
+        with slicer.util.tryWithErrorDisplay("TotalSegmentator Python packages could not be installed.",
+                                             waitCursor=True):
+            self.setStatus("Installing / checking TotalSegmentator Python packages "
+                           "(the first time this downloads PyTorch and can take a long time)...")
+            self.logic.ensureTotalSegmentatorRequirements(force=True)
+            self.setStatus("TotalSegmentator Python packages are installed.", append=True)
+
     def onRunTotalSegmentator(self):
         ct = self.ui.inputVolumeSelector.currentNode()
         with slicer.util.tryWithErrorDisplay("TotalSegmentator failed.", waitCursor=True):
             seg = self.ensureSegmentation()
             fast, cpu = self.ui.tsFastCheckBox.checked, self.ui.tsCpuCheckBox.checked
+            if not self.logic.tsRequirementsOk:
+                self.setStatus("Checking TotalSegmentator Python packages (first run installs them "
+                               "and can take a long time)...")
+                self.logic.ensureTotalSegmentatorRequirements()
             self.setStatus("Running TotalSegmentator 'total' (this can take several minutes)...")
             self.logic.runTotalSegmentator(ct, seg, task="total", fast=fast, cpu=cpu)
             if self.ui.tsBodyCheckBox.checked:
