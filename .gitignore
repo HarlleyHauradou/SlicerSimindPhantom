@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# phantom outputs
+*.dat
+*.zub
+*.dmi
+*.smi
+*_info.json
+# course material is not redistributed
+*.pdf

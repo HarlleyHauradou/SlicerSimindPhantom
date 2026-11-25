@@ -1,0 +1,36 @@
+# Default mapping TotalSegmentator segment name -> Zubal index.
+# 'pattern' is a regular expression searched in the normalized segment name
+# (lower case, '_' and '-' replaced by spaces), so it works with both TS ids
+# ("kidney_right") and standard names ("right kidney"). FIRST MATCH WINS: keep
+# specific rules (lesion, cyst, adrenal) above generic ones (kidney, liver).
+# role: organ | lesion | body (used only as body mask) | ignore
+pattern,zubal_index,activity,role,comment
+lesion|tumou?r|nodule|metasta|hot ?spot,63,0,lesion,lesions always painted last
+^body|^skin$,0,0,body,TotalSegmentator 'body' task -> body mask
+kidney.*cyst|cyst.*kidney,14,0,organ,kidney cyst counted as kidney
+adrenal,21,0,organ,
+kidney,14,0,organ,
+gall ?bladder,13,0,organ,
+liver,12,0,organ,
+spleen,31,0,organ,
+stomach,17,0,organ,
+pancreas,20,0,organ,
+lung,10,0,organ,all lobes
+esophagus,16,0,organ,
+trachea,29,0,organ,
+thyroid,28,0,organ,
+small bowel|duodenum,18,0,organ,
+colon,19,0,organ,
+urinary bladder|^bladder,40,0,organ,
+prostate,35,0,organ,
+brain,2,0,organ,
+spinal cord,3,0,organ,
+skull,4,0,organ,
+vertebra|sacrum,5,0,organ,
+costal cartilage,30,0,organ,
+\brib\b|sternum,6,0,organ,
+\bhip\b|pelvi,7,0,organ,
+femur|humerus|scapula|clavic,8,0,organ,
+heart|atri(al|um)|ventricle|myocardium,11,0,organ,
+aorta|arter|vein|vena cava|trunk|venous,23,0,organ,blood pool
+gluteus|iliopsoas|autochthon|muscle,9,0,organ,

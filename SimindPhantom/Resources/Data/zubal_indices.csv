@@ -1,0 +1,52 @@
+# Zubal phantom index table used for the .zub output and the Zubal-name column.
+# Rows marked "slide" come from vox_man.zub as shown in the course slides (Modulo 4).
+# Rows marked "assumed" are typical ICRU-like values: CHECK them against your own
+# vox_man.zub, or load it with "Load .zub" in the module to replace this table.
+index,name,density_mg_cm3,activity,source
+0,outside phantom,0,0,slide
+1,skin,1090,0,assumed
+2,brain,1040,0,slide
+3,spinal cord,1040,0,assumed
+4,skull,1610,0,assumed
+5,spine,1420,0,assumed
+6,rib cage & sternum,1420,0,assumed
+7,pelvis,1420,0,assumed
+8,long bones,1330,0,slide
+9,skeletal muscle,1050,0,assumed
+10,lungs,260,0,slide
+11,heart,1060,0,slide
+12,liver,1060,0,slide
+13,gall bladder,1026,0,slide
+14,kidney,1050,0,slide
+16,esophagus,1030,0,slide
+17,stomach,1030,0,assumed
+18,small bowel,1030,0,assumed
+19,colon,1030,0,slide
+20,pancreas,1040,0,assumed
+21,adrenals,1025,0,slide
+22,fat,950,0,slide
+23,blood pool,1060,0,slide
+24,gas (bowel),260,0,slide
+25,fluid (bowel),1007,0,slide
+26,bone marrow,1030,0,slide
+27,lymph nodes,1030,0,slide
+28,thyroid,1050,0,assumed
+29,trachea,1030,0,assumed
+30,cartilage,1100,0,slide
+31,spleen,1060,0,assumed
+33,feces,1010,0,slide
+35,prostate,1030,0,assumed
+39,diaphragm,1030,0,slide
+40,bladder,1040,0,slide
+63,lesion,1060,0,slide
+70,dens of axis,1180,0,slide
+71,jaw bone,1680,0,slide
+74,lacrimal glands,1045,0,slide
+76,hard palate,1680,0,slide
+77,cerebellum,1040,0,slide
+85,medulla oblongata,1420,0,slide
+106,optic nerve,1070,0,slide
+113,cerebral falx,1040,0,slide
+119,eye,1070,0,slide
+121,lens,1070,0,slide
+122,cerebral aquaduct,1040,0,slide

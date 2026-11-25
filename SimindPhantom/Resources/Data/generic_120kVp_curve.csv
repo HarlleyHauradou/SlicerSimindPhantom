@@ -1,0 +1,12 @@
+# Generic HU -> density (g/cm3) curve, ~120 kVp, simplified Schneider 2000.
+# Replace with the curve measured for your scanner (Gammex/CIRS phantom).
+hu,rho
+-1000,0.001
+-800,0.20
+-100,0.93
+0,1.00
+100,1.07
+300,1.20
+1000,1.60
+1800,1.85
+3071,1.92
