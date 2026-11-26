@@ -123,7 +123,7 @@
       <item row="1" column="0">
        <widget class="QLabel" name="segmentationFormLayoutLabel1">
         <property name="text">
-         <string>Options:</string>
+         <string>Quality / device:</string>
         </property>
         <property name="wordWrap">
          <bool>false</bool>
@@ -134,12 +134,9 @@
        <widget class="QWidget" name="tsOptionsWidget">
         <layout class="QHBoxLayout" name="tsOptionsWidgetLayout">
          <item>
-          <widget class="QCheckBox" name="tsFastCheckBox">
-           <property name="text">
-            <string>Fast (3 mm, lower quality)</string>
-           </property>
-           <property name="checked">
-            <bool>false</bool>
+          <widget class="QComboBox" name="tsQualityComboBox">
+           <property name="toolTip">
+            <string>normal = 1.5 mm; fast = 3 mm; faster = 6 mm (only some tasks). Tasks that do not support the choice use their best supported mode.</string>
            </property>
           </widget>
          </item>

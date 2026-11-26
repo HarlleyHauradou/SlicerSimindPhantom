@@ -6,6 +6,7 @@ pipeline.py; this class converts MRML nodes to arrays / SimpleITK images and bac
 """
 import colorsys
 import importlib
+import inspect
 import logging
 import os
 import subprocess
@@ -158,31 +159,38 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
                 os.environ["PIP_PREFER_BINARY"] = previous
         self.tsRequirementsOk = True
 
-    def runTotalSegmentator(self, ctNode, segNode, task="total", fast=False, cpu=False,
+    def availableTotalSegmentatorTasks(self):
+        """{task: {"title": str, "requiresLicense": bool}} offered by the installed extension."""
+        try:
+            tasks = getattr(self._newTotalSegmentatorLogic(), "tasks", {}) or {}
+        except Exception:
+            return {}
+        return {k: {"title": v.get("title", k), "requiresLicense": bool(v.get("requiresLicense"))}
+                for k, v in tasks.items()}
+
+    def runTotalSegmentator(self, ctNode, segNode, task="total", quality="normal", cpu=False,
                             subset=None):
-        """Run TotalSegmentator through the logic of the installed extension."""
+        """Run TotalSegmentator through the logic of the installed extension
+        (works with the old `fast=` and the new `quality=` process() signatures)."""
         self.ensureTotalSegmentatorRequirements()
         tsLogic = self._newTotalSegmentatorLogic()
-        kwargs = dict(fast=fast, cpu=cpu, task=task, subset=subset)
+        params = inspect.signature(tsLogic.process).parameters
+        kwargs = core.ts_process_kwargs(params, quality, cpu, task, subset)
         try:
-            tsLogic.process(ctNode, segNode, **kwargs)
-        except TypeError:   # older extension versions without some keywords
-            kwargs.pop("cpu")
-            kwargs.pop("subset")
             tsLogic.process(ctNode, segNode, **kwargs)
         except subprocess.CalledProcessError as e:
             raise core.PhantomError(
                 f"TotalSegmentator ({task}) failed; see View > Error Log for details.\n"
                 f"Command: {e.cmd if isinstance(e.cmd, str) else ' '.join(map(str, e.cmd))}") from e
 
-    def runTotalSegmentatorInto(self, ctNode, segNode, task, fast=False, cpu=False,
+    def runTotalSegmentatorInto(self, ctNode, segNode, task, quality="normal", cpu=False,
                                 keep=None, rename=None):
         """Run a TotalSegmentator task into a temporary segmentation and copy its
         segments (optionally filtered by `keep(name)` and renamed by `rename(name)`)
         into segNode. Returns the list of new segment ids."""
         tmp = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", f"_tmp_TS_{task}")
         try:
-            self.runTotalSegmentator(ctNode, tmp, task=task, fast=fast, cpu=cpu)
+            self.runTotalSegmentator(ctNode, tmp, task=task, quality=quality, cpu=cpu)
             return self.copySegments(tmp, segNode, keep, rename)
         finally:
             slicer.mrmlScene.RemoveNode(tmp)

@@ -290,3 +290,32 @@ def test_format_pip_error():
     assert "line 46" in msg and "line 45" not in msg
     assert "compile python-gdcm" in msg and "--only-binary=python-gdcm" in msg
     assert "Error Log" in core.format_pip_error("pip install x")
+
+
+def test_ts_process_kwargs_signatures():
+    import inspect
+
+    class NewTS:  # Slicer >= 5.10 TotalSegmentator extension
+        def process(self, inputVolume, outputSegmentation, quality=None, cpu=False, task=None,
+                    subset=None, interactive=False, sequenceBrowserNode=None):
+            return quality, cpu, task, subset
+
+    class OldTS:
+        def process(self, inputVolume, outputSegmentation, fast=True, cpu=False, task=None,
+                    subset=None, interactive=False, sequenceBrowserNode=None):
+            return fast, cpu, task, subset
+
+    class OldestTS:
+        def process(self, inputVolume, outputSegmentation, fast=True, task=None):
+            return fast, task
+
+    for cls, expect in ((NewTS, ("fast", True, "total", None)),
+                        (OldTS, (True, True, "total", None)),
+                        (OldestTS, (True, "total"))):
+        obj = cls()
+        kw = core.ts_process_kwargs(inspect.signature(obj.process).parameters, "fast", True, "total")
+        assert obj.process(None, None, **kw) == expect
+    kw = core.ts_process_kwargs(inspect.signature(NewTS().process).parameters, "normal")
+    assert kw == {"task": "total", "quality": "normal", "cpu": False, "subset": None}
+    with pytest.raises(core.PhantomError):
+        core.ts_process_kwargs(["quality"], "ultra")

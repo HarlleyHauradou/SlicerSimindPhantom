@@ -537,3 +537,28 @@ def format_pip_error(cmd, output=None, stderr=None, max_lines=30):
         msg.append("Cause: pip tried to compile python-gdcm from source (no wheel for this Python).")
     msg.append(PIP_HELP)
     return "\n\n".join(msg)
+
+
+# --------------------------------------------------------------------------
+# TotalSegmentator extension API compatibility
+# --------------------------------------------------------------------------
+TS_QUALITIES = ("normal", "fast", "faster")
+
+
+def ts_process_kwargs(param_names, quality="normal", cpu=False, task="total", subset=None):
+    """Keyword arguments for TotalSegmentatorLogic.process() of the installed extension.
+    New versions (Slicer >= 5.10): quality="normal"|"fast"|"faster".
+    Old versions: fast=True/False. cpu / subset are passed only if accepted."""
+    if quality not in TS_QUALITIES:
+        raise PhantomError(f"Unknown TotalSegmentator quality '{quality}'.")
+    names = set(param_names)
+    kw = {"task": task}
+    if "quality" in names:
+        kw["quality"] = quality
+    elif "fast" in names:
+        kw["fast"] = quality != "normal"
+    if "cpu" in names:
+        kw["cpu"] = bool(cpu)
+    if "subset" in names:
+        kw["subset"] = subset
+    return kw

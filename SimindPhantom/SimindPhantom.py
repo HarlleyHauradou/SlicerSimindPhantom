@@ -82,8 +82,9 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         for m in lesion.METHODS:
             self.ui.lesionMethodComboBox.addItem(m.title)
-        for task, (_, label) in lesion.TotalSegmentatorLesions.TASKS.items():
-            self.ui.lesionTsTaskComboBox.addItem(f"{task} - {label}", task)
+        for q in core.TS_QUALITIES:
+            self.ui.tsQualityComboBox.addItem(q, q)
+        self.fillLesionTaskCombo()
 
         # connections
         self.ui.inputVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputChanged)
@@ -229,17 +230,17 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         ct = self.ui.inputVolumeSelector.currentNode()
         with slicer.util.tryWithErrorDisplay("TotalSegmentator failed.", waitCursor=True):
             seg = self.ensureSegmentation()
-            fast, cpu = self.ui.tsFastCheckBox.checked, self.ui.tsCpuCheckBox.checked
+            quality, cpu = self.ui.tsQualityComboBox.currentData, self.ui.tsCpuCheckBox.checked
             if not self.logic.tsRequirementsOk:
                 self.setStatus("Checking TotalSegmentator Python packages (first run installs them "
                                "and can take a long time)...")
                 self.logic.ensureTotalSegmentatorRequirements()
             self.setStatus("Running TotalSegmentator 'total' (this can take several minutes)...")
-            self.logic.runTotalSegmentator(ct, seg, task="total", fast=fast, cpu=cpu)
+            self.logic.runTotalSegmentator(ct, seg, task="total", quality=quality, cpu=cpu)
             if self.ui.tsBodyCheckBox.checked:
                 self.setStatus("Running TotalSegmentator 'body'...", append=True)
                 self.logic.runTotalSegmentatorInto(
-                    ct, seg, "body", fast=fast, cpu=cpu,
+                    ct, seg, "body", quality=quality, cpu=cpu,
                     rename=lambda n: n if core.normalize_name(n).startswith(("body", "skin")) else f"body {n}")
             self.setStatus(f"Segmentation done: {seg.GetSegmentation().GetNumberOfSegments()} segments.",
                            append=True)
@@ -266,6 +267,14 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         usesRoi = method.key in ("functional", "seeded")
         self.ui.lesionRoiComboBox.enabled = usesRoi
 
+    def fillLesionTaskCombo(self):
+        cb = self.ui.lesionTsTaskComboBox
+        cb.clear()
+        if not self.logic.isTotalSegmentatorAvailable():
+            return
+        for task, label, _ in lesion.TotalSegmentatorLesions().task_items(self.logic):
+            cb.addItem(f"{task} - {label}", task)
+
     def fillRoiCombo(self):
         cb = self.ui.lesionRoiComboBox
         current = cb.currentData
@@ -286,7 +295,7 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         method = lesion.METHODS[self.ui.lesionMethodComboBox.currentIndex]
         params = {
             "task": self.ui.lesionTsTaskComboBox.currentData,
-            "fast": self.ui.tsFastCheckBox.checked,
+            "quality": self.ui.tsQualityComboBox.currentData,
             "cpu": self.ui.tsCpuCheckBox.checked,
             "source": self.ui.lesionSourceSelector.currentNode(),
             "regex": self.ui.lesionRegexLineEdit.text.strip(),

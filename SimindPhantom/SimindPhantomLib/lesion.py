@@ -58,11 +58,27 @@ class TotalSegmentatorLesions(LesionMethod):
     key = "ts"
     title = "TotalSegmentator sub-task"
     # task -> (regex of the lesion segments in the task output, label)
+    # task -> (regex of the lesion segments in the task output, label). Order = combobox order.
     TASKS = {
-        "liver_vessels": (r"tumou?r", "liver tumor"),
+        "liver_lesions": (r"lesion|tumou?r", "liver lesions"),
+        "kidney_cysts": (r"cyst", "kidney cysts"),
         "lung_nodules": (r"nodule", "lung nodules"),
-        "kidney_cysts_from_total": (r"cyst", "kidney cysts (already in 'total')"),
+        "liver_vessels": (r"tumou?r", "liver tumor (older TotalSegmentator versions)"),
+        "kidney_cysts_from_total": (r"cyst", "kidney cysts already in 'total'"),
     }
+    LOCAL_TASKS = ("kidney_cysts_from_total",)   # do not run TotalSegmentator
+
+    def task_items(self, logic):
+        """[(task, label, enabled)] for the tasks offered by the installed extension."""
+        offered = logic.availableTotalSegmentatorTasks()
+        items = []
+        for task, (_, label) in self.TASKS.items():
+            if task in self.LOCAL_TASKS:
+                items.append((task, label, True))
+            elif not offered or task in offered:
+                lic = offered.get(task, {}).get("requiresLicense", False)
+                items.append((task, label + (" [license required]" if lic else ""), True))
+        return items
 
     def available(self, logic):
         if not logic.isTotalSegmentatorAvailable():
@@ -70,7 +86,7 @@ class TotalSegmentatorLesions(LesionMethod):
         return True, ""
 
     def run(self, logic, ctNode, segNode, params):
-        task = params.get("task", "liver_vessels")
+        task = params.get("task") or "liver_lesions"
         if task not in self.TASKS:
             raise core.PhantomError(f"Unknown TotalSegmentator lesion task '{task}'.")
         pattern, label = self.TASKS[task]
@@ -92,7 +108,7 @@ class TotalSegmentatorLesions(LesionMethod):
 
         tmp = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", f"_tmp_TS_{task}")
         try:
-            logic.runTotalSegmentator(ctNode, tmp, task=task, fast=params.get("fast", False),
+            logic.runTotalSegmentator(ctNode, tmp, task=task, quality=params.get("quality", "normal"),
                                       cpu=params.get("cpu", False))
             seg = tmp.GetSegmentation()
             masks = []
