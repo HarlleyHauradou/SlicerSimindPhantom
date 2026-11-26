@@ -44,9 +44,9 @@ The UI lives in `SimindPhantom/Resources/UI/SimindPhantom.ui` and can be edited 
 | # | Section | What it does |
 |---|---------|--------------|
 | 1 | Input CT | Select the CT. DICOM checks: modality, kVp, contrast, gantry tilt. |
-| 2 | Automatic segmentation | Runs TotalSegmentator task `total` and optionally `body` (for the body mask). Opens the Segment Editor for manual edits. |
+| 2 | Automatic segmentation | Runs TotalSegmentator task `total` (quality normal / fast / faster) and optionally `body`, which goes to the separate body mask segmentation. Opens the Segment Editor for manual edits. If an organ segmentation already contains `body`/`skin` segments, they are moved to the body mask automatically. |
 | 3 | Lesions (optional) | See the lesion methods below. |
-| 4 | Body background | HU thresholds for the gas / fat / soft tissue / bone fill, the skin shell, and the body mask threshold. |
+| 4 | Body background | **Body mask**: a separate, hidden segmentation (`<CT> body mask`) with the TotalSegmentator `body` output, kept out of the organ segmentation so it never overlaps the organs. Without it, the body mask is computed from HU. Also sets the HU thresholds for the gas / fat / soft tissue / bone fill, the skin shell, and the body threshold. |
 | 5 | Output grid | Voxel size, matrix, centering on the body, slice order, and flips. Alternatively, an exact reference grid (e.g. the reconstructed SPECT). |
 | 6 | Structures | One row per segment plus the background classes. Edit the **Zubal index** and **Activity** columns. Yellow rows had no mapping rule. Load/save the mapping, load your own `vox_man.zub`, and load/save activity presets. |
 | 7 | Export | Tab **Zubal (.dat)** writes `.dat` and `.zub`. Tab **Density + Activity (.dmi/.smi)** writes `.dmi` and `.smi` using the HU→ρ curve (generic 120 kVp or your own CSV `hu,rho`). Every export also writes a `_info.json` (geometry, mapping, sha256, warnings) and can load the result back into the scene to check orientation. |

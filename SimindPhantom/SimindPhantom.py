@@ -56,6 +56,7 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic = None
         self.rows = []
         self._updatingTable = False
+        self._refreshing = False
 
     # ------------------------------------------------------------------ setup
     def setup(self):
@@ -107,6 +108,7 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.exportZubalButton.connect("clicked()", self.onExportZubal)
         self.ui.exportDmiSmiButton.connect("clicked()", self.onExportDmiSmi)
         self.ui.referenceVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateGuiState)
+        self.ui.bodyMaskSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onBodyMaskChanged)
         self.ui.matrixLineEdit.connect("textChanged(QString)", self.updateGuiState)
 
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
@@ -184,7 +186,17 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onSegmentationChanged(self, node):
         self.saveParameters()
+        self._setBodyMaskSelector(self.logic.bodyMaskNode(node))
         self.refreshTable(keepZubal=False)
+
+    def _setBodyMaskSelector(self, node):
+        wasBlocked = self.ui.bodyMaskSelector.blockSignals(True)
+        self.ui.bodyMaskSelector.setCurrentNode(node)
+        self.ui.bodyMaskSelector.blockSignals(wasBlocked)
+
+    def onBodyMaskChanged(self, node):
+        self.logic.setBodyMaskNode(self.ui.segmentationSelector.currentNode(), node)
+        self.refreshTable(keepZubal=True)
 
     # ------------------------------------------------------------------ helpers
     def setStatus(self, text, append=False):
@@ -238,10 +250,12 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.setStatus("Running TotalSegmentator 'total' (this can take several minutes)...")
             self.logic.runTotalSegmentator(ct, seg, task="total", quality=quality, cpu=cpu)
             if self.ui.tsBodyCheckBox.checked:
-                self.setStatus("Running TotalSegmentator 'body'...", append=True)
-                self.logic.runTotalSegmentatorInto(
-                    ct, seg, "body", quality=quality, cpu=cpu,
-                    rename=lambda n: n if core.normalize_name(n).startswith(("body", "skin")) else f"body {n}")
+                self.setStatus("Running TotalSegmentator 'body' (separate, hidden 'body mask' "
+                               "segmentation so it does not overlap the organs)...", append=True)
+                bodyNode = self.logic.bodyMaskNode(seg, ct, create=True)
+                bodyNode.GetSegmentation().RemoveAllSegments()
+                self.logic.runTotalSegmentatorInto(ct, bodyNode, "body", quality=quality, cpu=cpu)
+                self._setBodyMaskSelector(bodyNode)
             self.setStatus(f"Segmentation done: {seg.GetSegmentation().GetNumberOfSegments()} segments.",
                            append=True)
             self.refreshTable(keepZubal=True)
@@ -320,10 +334,30 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     # ------------------------------------------------------------------ structure table
     def refreshTable(self, keepZubal=True):
+        if self._refreshing:
+            return
+        self._refreshing = True
+        try:
+            self._refreshTable(keepZubal)
+        finally:
+            self._refreshing = False
+
+    def _refreshTable(self, keepZubal):
         seg = self.ui.segmentationSelector.currentNode()
         old = {r.key: r for r in self.rows}
         with slicer.util.tryWithErrorDisplay("Could not read the segmentation.", waitCursor=True):
-            self.rows = self.logic.structureRows(seg) if seg is not None else []
+            bodyNode = self.ui.bodyMaskSelector.currentNode()
+            if seg is not None and any(self.logic.isBodySegmentName(seg.GetSegmentation().GetSegment(sid).GetName())
+                                       for sid in seg.GetSegmentation().GetSegmentIDs()):
+                if bodyNode is None or bodyNode is seg:
+                    bodyNode = self.logic.bodyMaskNode(seg, self.ui.inputVolumeSelector.currentNode(),
+                                                       create=True)
+                n = self.logic.moveBodySegments(seg, bodyNode)
+                self.logic.setBodyMaskNode(seg, bodyNode)
+                self._setBodyMaskSelector(bodyNode)
+                self.setStatus(f"{n} body segment(s) moved to '{bodyNode.GetName()}' so they no longer "
+                               "overlap the organs (used only as body mask).")
+            self.rows = self.logic.structureRows(seg, bodyNode) if seg is not None else []
             for r in self.rows:
                 o = old.get(r.key)
                 if o is not None:
@@ -471,7 +505,8 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         rows = copy.deepcopy(self.rows)
         self.setStatus("Building phantom...")
         result = self.logic.buildPhantom(ct, seg, rows, self.phantomOptions(computeDensity),
-                                         self.ui.referenceVolumeSelector.currentNode(), self.progress)
+                                         self.ui.referenceVolumeSelector.currentNode(), self.progress,
+                                         bodyNode=self.ui.bodyMaskSelector.currentNode())
         # show the volumes computed at CT resolution in the table
         vols = {r.key: r.volume_cm3 for r in result.rows}
         for r in self.rows:
@@ -564,9 +599,32 @@ class SimindPhantomTest(ScriptedLoadableModuleTest):
         self.assertTrue(np.all(dmi[dat == 0] == 0))
         self.assertGreater(int(np.median(dmi[dat == 12])), 1000)
         self.assertEqual(byName["lesion_1 (test)"].voxels, int(masks["lesion"].sum()))
+        self.test_body_mask_moved(logic, ct, seg, dat, outDir)
         logic.showZubal(result, "test")
         logic.showDensityActivity(result, "test")
         self.delayDisplay("Export test passed")
+
+    def test_body_mask_moved(self, logic, ct, seg, datBefore, outDir):
+        self.delayDisplay("Body segment is moved out of the phantom segmentation")
+        z, y, x = np.ogrid[:40, :60, :60]
+        body = ((y - 30) ** 2 + (x - 30) ** 2 <= 25 ** 2) & (z >= 2) & (z < 38)
+        logic.addSegmentFromMask(seg, ct, body, "body")
+        bodyNode = logic.bodyMaskNode(seg, ct, create=True)
+        self.assertEqual(logic.moveBodySegments(seg, bodyNode), 1)
+        names = [seg.GetSegmentation().GetSegment(s).GetName() for s in seg.GetSegmentation().GetSegmentIDs()]
+        self.assertNotIn("body", names)
+        self.assertEqual(bodyNode.GetSegmentation().GetNumberOfSegments(), 1)
+        self.assertIs(logic.bodyMaskNode(seg), bodyNode)
+        rows = logic.structureRows(seg, bodyNode)
+        self.assertEqual(sum(r.role == core.ROLE_BODY for r in rows), 1)
+        byName = {r.name: r for r in rows}
+        byName["liver"].activity = 100
+        byName["lesion_1 (test)"].activity = 900
+        result = logic.buildPhantom(ct, seg, rows, pipeline.PhantomOptions(spacing=(4.0, 4.0, 5.0),
+                                    matrix=(32, 32, 24)), bodyNode=bodyNode)
+        f = logic.exportZubal(result, outDir, "test_body")
+        dat = np.fromfile(f["dat"], np.uint8).reshape(24, 32, 32)
+        self.assertTrue(np.array_equal(dat, datBefore))
 
     def test_functional_threshold_lesions(self):
         self.delayDisplay("Functional threshold lesion detection")
