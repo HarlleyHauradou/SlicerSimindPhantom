@@ -11,6 +11,7 @@ All computations are in SimindPhantomLib (logic.py, lesion.py, pipeline.py, core
 import copy
 import os
 import re
+import sys
 
 import ctk
 import numpy as np
@@ -119,6 +120,14 @@ class SimindPhantomWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def cleanup(self):
         self.removeObservers()
+
+    def onReload(self):
+        """Reload also the SimindPhantomLib helper package: Slicer's Reload only
+        re-imports this file, so without this the old logic stays in sys.modules."""
+        for name in list(sys.modules):
+            if name == "SimindPhantomLib" or name.startswith("SimindPhantomLib."):
+                del sys.modules[name]
+        ScriptedLoadableModuleWidget.onReload(self)
 
     def enter(self):
         self.updateGuiState()
