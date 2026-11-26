@@ -319,3 +319,11 @@ def test_ts_process_kwargs_signatures():
     assert kw == {"task": "total", "quality": "normal", "cpu": False, "subset": None}
     with pytest.raises(core.PhantomError):
         core.ts_process_kwargs(["quality"], "ultra")
+
+
+def test_subtract_masks():
+    body = np.ones((2, 2, 2), bool)
+    organs = np.zeros_like(body)
+    organs[0] = True
+    rem = core.subtract_masks(body, organs)
+    assert rem.sum() == 4 and not np.any(rem & organs)

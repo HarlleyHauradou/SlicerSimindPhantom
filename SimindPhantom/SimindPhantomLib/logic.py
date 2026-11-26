@@ -15,14 +15,15 @@ import numpy as np
 import SimpleITK as sitk
 import sitkUtils
 import slicer
+import vtk
 from slicer.ScriptedLoadableModule import ScriptedLoadableModuleLogic
 
 from . import core, pipeline
 from . import zubal_table as zt
 
 COLOR_TABLE_NAME = "SimindPhantom Zubal colors"
-BODY_MASK_REFERENCE = "SimindPhantomBodyMask"
-BODY_KEY_PREFIX = "body:"
+# node reference used by an earlier version that kept the body in a separate segmentation
+LEGACY_BODY_MASK_REFERENCE = "SimindPhantomBodyMask"
 
 
 class SimindPhantomLogic(ScriptedLoadableModuleLogic):
@@ -243,59 +244,75 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
             out.append((sid, seg.GetSegment(sid).GetName(), n, cm3))
         return out
 
-    def structureRows(self, segNode, bodyNode=None, includeBackground=True):
-        """Rows of the structure table: organs/lesions of segNode, then the body-mask
-        segments of bodyNode (key "body:<segmentId>", role body), then the HU classes."""
+    def structureRows(self, segNode, includeBackground=True):
         segs = self.listSegments(segNode)
         rows = pipeline.rows_from_segments([(s[0], s[1], s[2]) for s in segs], self.rules,
-                                           self.zubalTable, include_background=False)
+                                           self.zubalTable, includeBackground)
         vols = {s[0]: s[3] for s in segs}
         for r in rows:
             r.volume_cm3 = vols.get(r.key, 0.0)
-        for sid, name, n, cm3 in self.listSegments(bodyNode):
-            rows.append(pipeline.StructureRow(BODY_KEY_PREFIX + sid, name, core.ROLE_BODY, 0, 0,
-                                              True, n, 0, cm3))
-        if includeBackground:
-            rows.extend(pipeline.background_rows())
         return rows
 
-    # ------------------------------------------------------------------ body mask
+    # ------------------------------------------------------------------ body segment
     def isBodySegmentName(self, name):
         rule = core.match_rule(name, self.rules)
         return rule is not None and rule.role == core.ROLE_BODY
 
-    @staticmethod
-    def bodyMaskNode(segNode, ctNode=None, create=False):
-        """Separate (hidden) segmentation holding the body outline of segNode.
-        Kept apart so that it does not overlap the organs in the phantom segmentation."""
+    def bodySegmentIds(self, segNode):
         if segNode is None:
-            return None
-        node = segNode.GetNodeReference(BODY_MASK_REFERENCE)
-        if node is None and create:
-            base = ctNode.GetName() if ctNode is not None else segNode.GetName()
-            node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", f"{base} body mask")
-            if ctNode is not None:
-                node.SetReferenceImageGeometryParameterFromVolumeNode(ctNode)
-            node.CreateDefaultDisplayNodes()
-            node.GetDisplayNode().SetVisibility(False)
-            segNode.SetNodeReferenceID(BODY_MASK_REFERENCE, node.GetID())
-        return node
+            return []
+        seg = segNode.GetSegmentation()
+        return [s for s in seg.GetSegmentIDs() if self.isBodySegmentName(seg.GetSegment(s).GetName())]
 
     @staticmethod
-    def setBodyMaskNode(segNode, bodyNode):
-        if segNode is not None:
-            segNode.SetNodeReferenceID(BODY_MASK_REFERENCE, bodyNode.GetID() if bodyNode else None)
+    def unionMask(segNode, segIds, ctNode):
+        """Union of several segments on the CT grid (one export instead of one per segment)."""
+        shape = slicer.util.arrayFromVolume(ctNode).shape
+        if not segIds:
+            return np.zeros(shape, dtype=bool)
+        ids = vtk.vtkStringArray()
+        for sid in segIds:
+            ids.InsertNextValue(sid)
+        lm = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode", "_tmp_union")
+        try:
+            slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(segNode, ids, lm, ctNode)
+            return slicer.util.arrayFromVolume(lm) > 0
+        finally:
+            slicer.mrmlScene.RemoveNode(lm)
 
-    def moveBodySegments(self, segNode, bodyNode):
-        """Move body/skin segments out of the phantom segmentation into bodyNode.
-        Returns the number of segments moved."""
-        if segNode is None or bodyNode is None or segNode is bodyNode:
-            return 0
-        src, dst = segNode.GetSegmentation(), bodyNode.GetSegmentation()
-        ids = [sid for sid in src.GetSegmentIDs() if self.isBodySegmentName(src.GetSegment(sid).GetName())]
-        for sid in ids:
-            dst.CopySegmentFromSegmentation(src, sid, True)   # True = remove from source
-        return len(ids)
+    def subtractOrgansFromBody(self, segNode, ctNode, name="body"):
+        """Merge the body segments (body, body_trunc, body_extremities, skin) into ONE
+        segment and remove from it every other segment (organs, lesions), so the body
+        segment holds only the remaining tissue and does not overlap anything.
+        Returns (number of body segments merged, remaining body voxels)."""
+        bodyIds = self.bodySegmentIds(segNode)
+        if not bodyIds:
+            return 0, 0
+        seg = segNode.GetSegmentation()
+        others = [s for s in seg.GetSegmentIDs() if s not in bodyIds]
+        body = self.unionMask(segNode, bodyIds, ctNode)
+        remaining = core.subtract_masks(body, self.unionMask(segNode, others, ctNode))
+        keep = bodyIds[0]
+        for sid in bodyIds[1:]:
+            seg.RemoveSegment(sid)
+        seg.GetSegment(keep).SetName(name)
+        slicer.util.updateSegmentBinaryLabelmapFromArray(remaining.astype(np.uint8), segNode, keep, ctNode)
+        return len(bodyIds), int(remaining.sum())
+
+    def mergeLegacyBodyMaskNode(self, segNode):
+        """Bring back body segments from the separate 'body mask' segmentation created by
+        the previous version of the module. Returns True if something was merged."""
+        if segNode is None:
+            return False
+        node = segNode.GetNodeReference(LEGACY_BODY_MASK_REFERENCE)
+        if node is None:
+            return False
+        src = node.GetSegmentation()
+        for sid in list(src.GetSegmentIDs()):
+            segNode.GetSegmentation().CopySegmentFromSegmentation(src, sid, False)
+        segNode.SetNodeReferenceID(LEGACY_BODY_MASK_REFERENCE, None)
+        slicer.mrmlScene.RemoveNode(node)
+        return True
 
     @staticmethod
     def segmentMask(segNode, segId, ctNode):
@@ -334,29 +351,22 @@ class SimindPhantomLogic(ScriptedLoadableModuleLogic):
 
     # ------------------------------------------------------------------ phantom
     def buildPhantom(self, ctNode, segNode, rows, options, referenceVolumeNode=None,
-                     progress=None, bodyNode=None):
+                     progress=None):
         if ctNode is None:
             raise core.PhantomError("Select the input CT volume.")
         if segNode is None:
             raise core.PhantomError("Select (or create with TotalSegmentator) a segmentation.")
-        self.checkNoTransform(ctNode, segNode, referenceVolumeNode, bodyNode)
+        self.checkNoTransform(ctNode, segNode, referenceVolumeNode)
         if referenceVolumeNode is not None:
             ref = sitk.DICOMOrient(sitkUtils.PullVolumeFromSlicer(referenceVolumeNode), "LPS")
             options.reference_grid = core.grid_from_image(ref)
         else:
             options.reference_grid = None
         ctImg = sitkUtils.PullVolumeFromSlicer(ctNode)
-        def getMask(key):
-            if key.startswith(BODY_KEY_PREFIX):
-                if bodyNode is None:
-                    raise core.PhantomError("The body mask segmentation is not selected.")
-                return self.segmentMask(bodyNode, key[len(BODY_KEY_PREFIX):], ctNode)
-            return self.segmentMask(segNode, key, ctNode)
-
-        result = pipeline.build_phantom(ctImg, getMask, rows, options, progress)
+        result = pipeline.build_phantom(ctImg, lambda key: self.segmentMask(segNode, key, ctNode),
+                                        rows, options, progress)
         info, warns = self.ctDicomInfo(ctNode)
         result.input_info.update({"ct_node": ctNode.GetName(), "segmentation_node": segNode.GetName(),
-                                  "body_mask_node": bodyNode.GetName() if bodyNode else None,
                                   "dicom": info, "zubal_table": self.zubalTableSource})
         result.warnings[:0] = warns
         self.lastResult = result

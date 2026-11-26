@@ -300,6 +300,11 @@ def add_skin(struct, skin_id, protected_ids=(), body=None):
     return struct
 
 
+def subtract_masks(body, others):
+    """Body voxels not covered by any other structure (body AND NOT others)."""
+    return body.astype(bool) & ~others.astype(bool)
+
+
 def lookup(struct, lut, dtype):
     """Map structure ids through a lookup table (numpy array indexed by id)."""
     lut = np.asarray(lut)
